@@ -2,15 +2,15 @@ package com.mx.service;
 
 import com.mx.mapper.EmployeeMapper;
 import com.mx.model.entity.Employee;
+import com.mx.model.entity.EmployeeWorkedHours;
 import com.mx.model.entity.Gender;
 import com.mx.model.entity.Job;
 import com.mx.model.request.EmployeeHoursRequest;
 import com.mx.model.request.EmployeeRequest;
 import com.mx.model.request.EmployeeThreadRequest;
-import com.mx.model.response.EmployeeHoursResponse;
-import com.mx.model.response.EmployeeResponse;
-import com.mx.model.response.EmployeeThreadListResponse;
-import com.mx.model.response.EmployeeThreadResponse;
+import com.mx.model.request.PaymentRequest;
+import com.mx.model.response.*;
+import com.mx.repository.EmployeeWorkedHoursRepository;
 import com.mx.repository.EmployeesRepository;
 import com.mx.repository.GendersRepository;
 import com.mx.repository.JobsRepository;
@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -42,6 +43,30 @@ public class EmployeeService {
 
 	@Inject
 	EmployeeMapper employeeMapper;
+
+	@Inject
+	EmployeeWorkedHoursRepository employeeWorkedHoursRepository;
+
+	public PaymentResponse calculatePayment(PaymentRequest request) {
+
+		/* las validaciones se hacen por annotations */
+		Employee employee = employeesRepository.findById(request.getEmployeeId());
+
+		LocalDate startDate = LocalDate.parse(request.getStartDate(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+		LocalDate endDate = LocalDate.parse(request.getEndDate(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+
+		List<EmployeeWorkedHours> workedHours = employeeWorkedHoursRepository.findByEmployeeIdAndDateRange(
+			employee.getId(),
+			startDate,
+			endDate
+		);
+
+		// calcular el pago total
+		double totalWorkedHours = workedHours.stream().mapToDouble(EmployeeWorkedHours::getWorkedHours).sum();
+		double payment = totalWorkedHours * employee.getJob().getSalary();
+
+		return new PaymentResponse(payment, true);
+	}
 
 	@Transactional
 	public Employee addEmployee(EmployeeRequest request) {
@@ -64,7 +89,6 @@ public class EmployeeService {
 		return employee;
 	}
 
-	@Transactional
 	public List<EmployeeResponse> getEmployeesByJobId(Long jobId) {
 		List<Employee> employees = employeesRepository.findByJobId(jobId);
 		return employees.stream()
@@ -72,10 +96,22 @@ public class EmployeeService {
 			.collect(Collectors.toList());
 	}
 
+	public Map<String, List<EmployeeResponse>> getEmployeesByJobIdGroupedByLastName(Long jobId) {
+
+		List<Employee> employees = employeesRepository.listAll();
+		return employees.stream()
+			.filter(employee -> employee.getJob().getId().equals(jobId)) // Filtrar por jobId
+			.sorted((e1, e2) -> e1.getLastName().compareTo(e2.getLastName())) // Ordenar por lastName
+			.map(employeeMapper::mapToEmployeeResponse) // Mapear a EmployeeResponse
+			.collect(Collectors.groupingBy(EmployeeResponse::getLastName)); // Agrupar por lastName
+
+	}
+
+
 	public EmployeeThreadListResponse threadEmployees(EmployeeThreadRequest request) {
 		List<Long> employeeIds = request.getEmployeeIds();
-		java.sql.Date startDate = java.sql.Date.valueOf(request.getStartDate()) ;
-		java.sql.Date  endDate = java.sql.Date.valueOf(request.getEndDate());
+		java.sql.Date startDate = java.sql.Date.valueOf(request.getStartDate());
+		java.sql.Date endDate = java.sql.Date.valueOf(request.getEndDate());
 
 		List<EmployeeThreadResponse> employees = new ArrayList<>();
 		List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -85,11 +121,11 @@ public class EmployeeService {
 		Esto significa que no se realiza una solicitud por cada ID de forma secuencial uno por uno,
 		sino que se envían todas las solicitudes a la vez para que se procesen de manera concurrente
 		*/
-		for (Long employeeId : employeeIds) {
+		for(Long employeeId : employeeIds) {
 			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-				Employee employee = employeesRepository.findByIdAndDates(employeeId,startDate, endDate);
+				Employee employee = employeesRepository.findByIdAndDates(employeeId, startDate, endDate);
 
-				if (employee != null) {
+				if(employee != null) {
 					EmployeeThreadResponse employeeResponse = mapToEmployeeResponse(employee);
 					employees.add(employeeResponse);
 				}
@@ -102,7 +138,7 @@ public class EmployeeService {
 		CompletableFuture<Void> allOf = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
 		try {
 			allOf.get();
-		} catch (InterruptedException | ExecutionException e) {
+		} catch(InterruptedException | ExecutionException e) {
 
 			e.printStackTrace();
 		}
@@ -128,7 +164,7 @@ public class EmployeeService {
 	public EmployeeHoursResponse getTotalWorkedHours(EmployeeHoursRequest request) {
 		try {
 			// Validar las fechas utilizando la clase de validación
-			if (!HoursValidationUtils.isValidDateRange(request.getStartDate(), request.getEndDate())) {
+			if(!HoursValidationUtils.isValidDateRange(request.getStartDate(), request.getEndDate())) {
 				return new EmployeeHoursResponse(null, false);
 			}
 
@@ -141,7 +177,7 @@ public class EmployeeService {
 
 
 			return new EmployeeHoursResponse(totalWorkedHours, true);
-		} catch (Exception e) {
+		} catch(Exception e) {
 
 			return new EmployeeHoursResponse(null, false);
 		}

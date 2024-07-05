@@ -11,7 +11,7 @@ import java.lang.annotation.*;
 @Documented
 public @interface Adult {
 
-	String message() default "El empleado debe ser mayor de edad.";
+	String message() default "El Empleado debe ser mayor de edad.";
 
 	Class<?>[] groups() default {};
 

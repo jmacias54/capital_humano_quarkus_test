@@ -34,7 +34,7 @@ public class EmployeeMapper {
 	}
 
 	private GenderResponse mapToGenderResponse(Gender gender) {
-		GenderResponse genderResponse = new .GenderResponse();
+		GenderResponse genderResponse = new GenderResponse();
 		genderResponse.setId(gender.getId());
 		genderResponse.setName(gender.getName());
 		return genderResponse;
